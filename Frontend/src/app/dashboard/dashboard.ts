@@ -2,7 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
-import { Api } from '../services/api';
+import { ApiService } from '../services/api';
 
 @Component({
   selector: 'app-dashboard',
@@ -20,7 +20,7 @@ import { Api } from '../services/api';
 
       <div class="stats-card">
         <h3>Monthly Total</h3>
-        <div class="total-amount">\${{ monthlyTotal.toFixed(2) }}</div>
+        <div class="total-amount">\${{ totalMonthlySpend.toFixed(2) }}</div>
         <p>{{ subscriptions.length }} active subscription(s)</p>
       </div>
 
@@ -64,10 +64,10 @@ import { Api } from '../services/api';
         </div>
       </div>
 
-      <div class="upcoming-alert" *ngIf="upcomingSubscriptions.length > 0">
+      <div class="upcoming-alert" *ngIf="upcomingCharges.length > 0">
         <h3>⚠️ Upcoming Charges (Next 7 Days)</h3>
-        <div class="upcoming-item" *ngFor="let sub of upcomingSubscriptions">
-          {{ sub.name }} - \${{ sub.amount }} on {{ sub.nextChargeDate | date:'MMM d' }}
+        <div class="upcoming-item" *ngFor="let charge of upcomingCharges">
+          {{ charge.name }} - \${{ charge.amount }} on {{ charge.chargeDate | date:'MMM d' }}
         </div>
       </div>
     </div>
@@ -247,8 +247,8 @@ import { Api } from '../services/api';
 })
 export class Dashboard implements OnInit {
   subscriptions: any[] = [];
-  monthlyTotal = 0;
-  upcomingSubscriptions: any[] = [];
+  totalMonthlySpend = 0;
+  upcomingCharges: any[] = [];
   userEmail = '';
   showAddForm = false;
   
@@ -260,51 +260,57 @@ export class Dashboard implements OnInit {
     cancellationLink: ''
   };
 
-  constructor(private api: Api, private router: Router) {}
+  constructor(private api: ApiService, private router: Router) {}
 
   ngOnInit() {
-    const userId = localStorage.getItem('userId');
-    if (!userId) {
+    console.log('=== Dashboard Init ===');
+    
+    // Check localStorage
+      const token = sessionStorage.getItem('token');
+  const userId = sessionStorage.getItem('userId');
+  const userEmail = sessionStorage.getItem('userEmail');
+  
+  console.log('Token from sessionStorage:', token);
+  console.log('UserId from sessionStorage:', userId);
+  console.log('UserEmail from sessionStorage:', userEmail);
+    if (!token || !userId) {
+      console.log('No token or userId, redirecting to login');
       this.router.navigate(['/login']);
       return;
     }
     
-    this.userEmail = localStorage.getItem('userEmail') || '';
-    this.loadSubscriptions();
+    this.userEmail = userEmail || '';
+    this.loadDashboard();
   }
 
-  loadSubscriptions() {
-    const userId = localStorage.getItem('userId');
-    if (!userId) return;
-
-    this.api.getSubscriptions(userId).subscribe({
-      next: (res) => {
-        this.subscriptions = res.subscriptions;
-        this.monthlyTotal = res.monthlyTotal;
-        this.findUpcomingCharges();
+  loadDashboard() {
+    console.log('Loading dashboard...');
+    this.api.getDashboard().subscribe({
+      next: (response: any) => {
+        console.log('Dashboard loaded:', response);
+        this.subscriptions = response.subscriptions || [];
+        this.totalMonthlySpend = response.totalMonthlySpend || 0;
+        this.upcomingCharges = response.upcomingCharges || [];
       },
-      error: (err) => {
-        console.error('Failed to load subscriptions', err);
-        alert('Failed to load subscriptions. Make sure backend is running.');
+      error: (err: any) => {
+        console.error('Failed to load dashboard:', err);
+        if (err.status === 401) {
+          console.log('Unauthorized, redirecting to login');
+          localStorage.clear();
+          this.router.navigate(['/login']);
+        } else {
+          alert('Failed to load subscriptions. Please try again.');
+        }
       }
     });
   }
 
-  findUpcomingCharges() {
-    const today = new Date();
-    const nextWeek = new Date();
-    nextWeek.setDate(today.getDate() + 7);
-
-    this.upcomingSubscriptions = this.subscriptions.filter(sub => {
-      const chargeDate = new Date(sub.nextChargeDate);
-      return chargeDate >= today && chargeDate <= nextWeek;
-    });
-  }
-
   addSubscription() {
-    const userId = localStorage.getItem('userId');
-    if (!userId) {
-      alert('Please login again');
+    const token = localStorage.getItem('token');
+    console.log('Adding subscription - token exists?', !!token);
+    
+    if (!token) {
+      this.router.navigate(['/login']);
       return;
     }
 
@@ -313,9 +319,7 @@ export class Dashboard implements OnInit {
       return;
     }
 
-    // Prepare data exactly as backend expects
     const data = {
-      userId: userId,
       name: this.newSubscription.name,
       amount: this.newSubscription.amount,
       frequency: this.newSubscription.frequency,
@@ -323,11 +327,11 @@ export class Dashboard implements OnInit {
       cancellationLink: this.newSubscription.cancellationLink || null
     };
 
-    console.log('Sending data:', data); // For debugging
+    console.log('Adding subscription:', data);
 
     this.api.addSubscription(data).subscribe({
-      next: (response) => {
-        console.log('Success:', response);
+      next: (response: any) => {
+        console.log('Subscription added:', response);
         this.showAddForm = false;
         this.newSubscription = {
           name: '',
@@ -336,17 +340,11 @@ export class Dashboard implements OnInit {
           nextChargeDate: '',
           cancellationLink: ''
         };
-        this.loadSubscriptions();
+        this.loadDashboard();
       },
-      error: (err) => {
-        console.error('Error details:', err);
-        let errorMsg = 'Failed to add subscription. ';
-        if (err.error?.error) {
-          errorMsg += err.error.error;
-        } else if (err.message) {
-          errorMsg += err.message;
-        }
-        alert(errorMsg);
+      error: (err: any) => {
+        console.error('Error adding subscription:', err);
+        alert('Failed to add subscription: ' + (err.error?.error || 'Unknown error'));
       }
     });
   }
@@ -355,9 +353,9 @@ export class Dashboard implements OnInit {
     if (confirm('Remove this subscription?')) {
       this.api.deleteSubscription(id).subscribe({
         next: () => {
-          this.loadSubscriptions();
+          this.loadDashboard();
         },
-        error: (err) => {
+        error: (err: any) => {
           console.error('Delete error:', err);
           alert('Failed to delete subscription');
         }
@@ -366,7 +364,8 @@ export class Dashboard implements OnInit {
   }
 
   logout() {
-    localStorage.clear();
-    this.router.navigate(['/login']);
-  }
+  console.log('Logging out, clearing sessionStorage');
+  sessionStorage.clear();
+  this.router.navigate(['/login']);
+}
 }

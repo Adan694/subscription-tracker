@@ -1,31 +1,55 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { environment } from '../../environments/environment';
 
 @Injectable({
   providedIn: 'root'
 })
-export class Api {
-  private apiUrl = 'http://localhost:5114/api';
+export class ApiService {
+  private apiUrl = environment.apiUrl;
 
   constructor(private http: HttpClient) { }
 
-  register(email: string, password: string) {
-    return this.http.post<any>(`${this.apiUrl}/register`, { email, password });
+  private getHeaders(): HttpHeaders {
+    const token = sessionStorage.getItem('token');
+    console.log('API Service - Getting token from sessionStorage:', token);
+    
+    const headers = new HttpHeaders({
+      'Content-Type': 'application/json',
+      'Authorization': token ? `Bearer ${token}` : ''
+    });
+    
+    return headers;
+  }
+
+  register(email: string, password: string, phoneNumber?: string) {
+    return this.http.post<any>(`${this.apiUrl}/auth/register`, { 
+      email, 
+      password, 
+      phoneNumber 
+    });
   }
 
   login(email: string, password: string) {
-    return this.http.post<any>(`${this.apiUrl}/login`, { email, password });
+    return this.http.post<any>(`${this.apiUrl}/auth/login`, { email, password });
   }
 
-  getSubscriptions(userId: string) {
-    return this.http.get<any>(`${this.apiUrl}/subscriptions/${userId}`);
+  getDashboard() {
+    console.log('API Service - Fetching dashboard');
+    return this.http.get<any>(`${this.apiUrl}/subscriptions`, {
+      headers: this.getHeaders()
+    });
   }
 
   addSubscription(data: any) {
-    return this.http.post<any>(`${this.apiUrl}/subscriptions`, data);
+    return this.http.post<any>(`${this.apiUrl}/subscriptions`, data, {
+      headers: this.getHeaders()
+    });
   }
 
-  deleteSubscription(subscriptionId: string) {
-    return this.http.delete<any>(`${this.apiUrl}/subscriptions/${subscriptionId}`);
+  deleteSubscription(id: string) {
+    return this.http.delete<any>(`${this.apiUrl}/subscriptions/${id}`, {
+      headers: this.getHeaders()
+    });
   }
 }

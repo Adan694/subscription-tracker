@@ -1,14 +1,13 @@
-
-
 import { Component } from '@angular/core';
-import { Router } from '@angular/router';
-import { Api } from '../services/api';
-import { CommonModule } from '@angular/common';
+import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
+import { CommonModule } from '@angular/common';
+import { ApiService } from '../services/api';
 
 @Component({
   selector: 'app-register',
-  imports:[CommonModule, FormsModule],
+  standalone: true,
+  imports: [FormsModule, CommonModule, RouterLink],
   template: `
     <div class="container">
       <div class="card">
@@ -116,7 +115,7 @@ export class Register {
   errorMessage = '';
   successMessage = '';
 
-  constructor(private api: Api, private router: Router) {}
+  constructor(private api: ApiService, private router: Router) {}
 
   register() {
     if (!this.email || !this.password) {
@@ -129,13 +128,13 @@ export class Register {
     this.successMessage = '';
 
     this.api.register(this.email, this.password).subscribe({
-      next: (res) => {
-        this.successMessage = res.message;
+      next: (response: any) => {
+        this.successMessage = response.message;
         setTimeout(() => {
           this.router.navigate(['/login']);
         }, 2000);
       },
-      error: (err) => {
+      error: (err: any) => {
         this.errorMessage = err.error?.error || 'Registration failed';
         this.loading = false;
       }

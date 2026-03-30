@@ -1,11 +1,13 @@
 import { Component } from '@angular/core';
-import { Router } from '@angular/router';
-import { Api } from '../services/api';
+import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
+import { CommonModule } from '@angular/common';
+import { ApiService } from '../services/api';
 
 @Component({
   selector: 'app-login',
-  imports:[FormsModule],
+  standalone: true,
+  imports: [FormsModule, CommonModule, RouterLink],
   template: `
     <div class="container">
       <div class="card">
@@ -27,6 +29,7 @@ import { FormsModule } from '@angular/forms';
         </button>
         
         <p class="error" *ngIf="errorMessage">{{ errorMessage }}</p>
+        <p class="success" *ngIf="successMessage">{{ successMessage }}</p>
         
         <p class="link">Don't have an account? <a routerLink="/register">Register</a></p>
       </div>
@@ -95,6 +98,11 @@ import { FormsModule } from '@angular/forms';
       text-align: center;
       margin-top: 15px;
     }
+    .success {
+      color: #27ae60;
+      text-align: center;
+      margin-top: 15px;
+    }
     .link {
       text-align: center;
       margin-top: 20px;
@@ -111,28 +119,56 @@ export class Login {
   password = '';
   loading = false;
   errorMessage = '';
+  successMessage = '';
 
-  constructor(private api: Api, private router: Router) {}
+  constructor(private api: ApiService, private router: Router) {}
 
   login() {
-    if (!this.email || !this.password) {
-      this.errorMessage = 'Please fill all fields';
-      return;
-    }
+  if (!this.email || !this.password) {
+    this.errorMessage = 'Please fill all fields';
+    return;
+  }
 
-    this.loading = true;
-    this.errorMessage = '';
+  this.loading = true;
+  this.errorMessage = '';
+  this.successMessage = '';
 
-    this.api.login(this.email, this.password).subscribe({
-      next: (res) => {
-        localStorage.setItem('userId', res.userId);
-        localStorage.setItem('userEmail', res.email);
-        this.router.navigate(['/dashboard']);
-      },
-      error: (err) => {
-        this.errorMessage = err.error?.error || 'Login failed';
+  console.log('Attempting login with:', { email: this.email });
+
+  this.api.login(this.email, this.password).subscribe({
+    next: (response: any) => {
+      console.log('Login response received:', response);
+      
+      // Save token and user info
+      if (response.token) {
+       sessionStorage.setItem('token', response.token);
+          sessionStorage.setItem('userId', response.userId);
+          sessionStorage.setItem('userEmail', response.email);
+        // Verify immediately
+        console.log('After saving - Token:', localStorage.getItem('token'));
+        console.log('After saving - UserId:', localStorage.getItem('userId'));
+        console.log('After saving - UserEmail:', localStorage.getItem('userEmail'));
+        
+        this.successMessage = 'Login successful! Redirecting...';
+        
+        // Use setTimeout to ensure storage is saved
+        setTimeout(() => {
+          console.log('Navigating to dashboard...');
+          // Use window.location for a hard navigation instead of router
+          window.location.href = '/dashboard';
+        }, 1000);
+      } else {
+        console.error('No token in response!');
+        this.errorMessage = 'Invalid response from server';
         this.loading = false;
       }
-    });
+    },
+    error: (err: any) => {
+      console.error('Login error:', err);
+      this.errorMessage = err.error?.error || 'Login failed. Please check your credentials.';
+      this.loading = false;
+    }
+  });
+
   }
 }
