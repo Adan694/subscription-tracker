@@ -60,7 +60,7 @@ if (jwtSettings == null || string.IsNullOrEmpty(jwtSettings.SecretKey))
     // For development, set a default secret key if not configured
     jwtSettings = new JwtSettings
     {
-        SecretKey = "your-super-secret-key-with-at-least-32-characters-long",
+        SecretKey = "V7g6Hy&szXQrjDF%8uIKtv^LRewnUGpo",
         Issuer = "SubscriptionTracker",
         Audience = "SubscriptionTrackerUsers",
         ExpirationMinutes = 60
@@ -144,6 +144,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("Development");
+app.UseMiddleware<SimpleAuthMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 

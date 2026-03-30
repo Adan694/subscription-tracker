@@ -8,7 +8,6 @@ using System.Security.Claims;
 
 namespace Backend.Controllers;
 
-[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class SubscriptionsController : ControllerBase
@@ -31,188 +30,66 @@ public class SubscriptionsController : ControllerBase
         }
         return userId;
     }
-
     [HttpGet]
     public async Task<IActionResult> GetSubscriptions()
     {
-        // Get userId from the token
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-
-        // If no claim, try to get from Authorization header
-        if (string.IsNullOrEmpty(userIdClaim))
+        // Get userId from middleware
+        if (!HttpContext.Items.TryGetValue("UserId", out var userIdObj) || userIdObj is not Guid userId)
         {
-            var authHeader = Request.Headers["Authorization"].ToString();
-            if (authHeader.StartsWith("Bearer "))
-            {
-                var token = authHeader.Substring("Bearer ".Length);
-                try
-                {
-                    // Decode the Base64 token to get userId
-                    var decodedBytes = Convert.FromBase64String(token);
-                    var decodedUserId = System.Text.Encoding.UTF8.GetString(decodedBytes);
-
-                    if (Guid.TryParse(decodedUserId, out var userId))
-                    {
-                        userIdClaim = decodedUserId;
-                    }
-                }
-                catch
-                {
-                    // If token is not Base64, maybe it's the raw userId
-                    if (Guid.TryParse(token, out var userId))
-                    {
-                        userIdClaim = token;
-                    }
-                }
-            }
+            return Unauthorized(new { error = "User not authenticated" });
         }
 
-        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var finalUserId))
-        {
-            return Unauthorized(new { error = "Invalid user" });
-        }
-
-        // Now get subscriptions for this user
         var subscriptions = await _context.Subscriptions
-            .Where(s => s.UserId == finalUserId && s.IsActive)
+            .Where(s => s.UserId == userId && s.IsActive)
             .OrderBy(s => s.NextChargeDate)
-            .Select(s => new SubscriptionResponseDto
+            .Select(s => new
             {
-                Id = s.Id,
-                Name = s.Name,
-                Amount = s.Amount,
-                Frequency = s.Frequency,
-                NextChargeDate = s.NextChargeDate,
-                CancellationLink = s.CancellationLink,
-                Category = s.Category,
-                Notes = s.Notes,
-                CreatedAt = s.CreatedAt,
-                MonthlyEquivalent = s.Frequency == "monthly" ? s.Amount :
-                                    s.Frequency == "yearly" ? s.Amount / 12 :
-                                    s.Frequency == "weekly" ? s.Amount * 4.33m : s.Amount,
-                YearlyEquivalent = s.Frequency == "monthly" ? s.Amount * 12 :
-                                  s.Frequency == "yearly" ? s.Amount :
-                                  s.Frequency == "weekly" ? s.Amount * 52 : s.Amount,
-                DaysUntilNextCharge = (int)(s.NextChargeDate - DateTime.UtcNow).TotalDays
+                s.Id,
+                s.Name,
+                s.Amount,
+                s.Frequency,
+                s.NextChargeDate,
+                s.CancellationLink
             })
             .ToListAsync();
 
-        var dashboard = new DashboardResponseDto
-        {
-            Subscriptions = subscriptions,
-            TotalMonthlySpend = subscriptions.Sum(s => s.MonthlyEquivalent),
-            TotalYearlySpend = subscriptions.Sum(s => s.YearlyEquivalent),
-            ActiveSubscriptionCount = subscriptions.Count,
-            UpcomingCharges = subscriptions
-                .Where(s => s.DaysUntilNextCharge <= 7)
-                .Select(s => new UpcomingChargeDto
-                {
-                    SubscriptionId = s.Id,
-                    Name = s.Name,
-                    Amount = s.Amount,
-                    ChargeDate = s.NextChargeDate,
-                    DaysUntilCharge = s.DaysUntilNextCharge
-                })
-                .ToList(),
-            SpendingByCategory = subscriptions
-                .GroupBy(s => s.Category ?? "Other")
-                .ToDictionary(g => g.Key, g => g.Sum(s => s.MonthlyEquivalent))
-        };
+        var monthlyTotal = subscriptions
+            .Where(s => s.Frequency == "monthly")
+            .Sum(s => s.Amount);
 
-        return Ok(dashboard);
-    }
-    [HttpGet("{id}")]
-    public async Task<IActionResult> GetSubscription(Guid id)
-    {
-        var userId = GetUserId();
-        if (userId == null)
+        return Ok(new
         {
-            return Unauthorized(new { error = "Invalid user" });
-        }
-
-        var subscription = await _context.Subscriptions
-            .FirstOrDefaultAsync(s => s.Id == id && s.UserId == userId);
-
-        if (subscription == null)
-        {
-            return NotFound(new { error = "Subscription not found" });
-        }
-
-        return Ok(new SubscriptionResponseDto
-        {
-            Id = subscription.Id,
-            Name = subscription.Name,
-            Amount = subscription.Amount,
-            Frequency = subscription.Frequency,
-            NextChargeDate = subscription.NextChargeDate,
-            CancellationLink = subscription.CancellationLink,
-            Category = subscription.Category,
-            Notes = subscription.Notes,
-            CreatedAt = subscription.CreatedAt
+            subscriptions = subscriptions,
+            totalMonthlySpend = monthlyTotal,
+            activeSubscriptionCount = subscriptions.Count
         });
     }
 
     [HttpPost]
     public async Task<IActionResult> CreateSubscription([FromBody] CreateSubscriptionRequestDto request)
     {
-        // Get userId from the token
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-
-        // If no claim, try to get from Authorization header
-        if (string.IsNullOrEmpty(userIdClaim))
+        if (!HttpContext.Items.TryGetValue("UserId", out var userIdObj) || userIdObj is not Guid userId)
         {
-            var authHeader = Request.Headers["Authorization"].ToString();
-            if (authHeader.StartsWith("Bearer "))
-            {
-                var token = authHeader.Substring("Bearer ".Length);
-                try
-                {
-                    var decodedBytes = Convert.FromBase64String(token);
-                    var decodedUserId = System.Text.Encoding.UTF8.GetString(decodedBytes);
-                    if (Guid.TryParse(decodedUserId, out var userId))
-                    {
-                        userIdClaim = decodedUserId;
-                    }
-                }
-                catch
-                {
-                    if (Guid.TryParse(token, out var userId))
-                    {
-                        userIdClaim = token;
-                    }
-                }
-            }
-        }
-
-        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var finalUserId))
-        {
-            return Unauthorized(new { error = "Invalid user" });
+            return Unauthorized(new { error = "User not authenticated" });
         }
 
         var subscription = new Subscription
         {
-            UserId = finalUserId,
+            Id = Guid.NewGuid(),
+            UserId = userId,
             Name = request.Name,
             Amount = request.Amount,
-            Frequency = request.Frequency,
+            Frequency = request.Frequency ?? "monthly",
             NextChargeDate = request.NextChargeDate ?? DateTime.UtcNow.AddDays(30),
             CancellationLink = request.CancellationLink,
-            Category = request.Category,
-            Notes = request.Notes,
+            IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
 
         _context.Subscriptions.Add(subscription);
         await _context.SaveChangesAsync();
 
-        _logger.LogInformation("New subscription created: {Name} for user {UserId}", subscription.Name, finalUserId);
-
-        return CreatedAtAction(nameof(GetSubscription), new { id = subscription.Id }, new
-        {
-            success = true,
-            subscriptionId = subscription.Id,
-            message = "Subscription added successfully!"
-        });
+        return Ok(new { success = true, subscriptionId = subscription.Id });
     }
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateSubscription(Guid id, [FromBody] UpdateSubscriptionRequestDto request)
@@ -252,41 +129,13 @@ public class SubscriptionsController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteSubscription(Guid id)
     {
-        // Get userId from the token
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-
-        if (string.IsNullOrEmpty(userIdClaim))
+        if (!HttpContext.Items.TryGetValue("UserId", out var userIdObj) || userIdObj is not Guid userId)
         {
-            var authHeader = Request.Headers["Authorization"].ToString();
-            if (authHeader.StartsWith("Bearer "))
-            {
-                var token = authHeader.Substring("Bearer ".Length);
-                try
-                {
-                    var decodedBytes = Convert.FromBase64String(token);
-                    var decodedUserId = System.Text.Encoding.UTF8.GetString(decodedBytes);
-                    if (Guid.TryParse(decodedUserId, out var userId))
-                    {
-                        userIdClaim = decodedUserId;
-                    }
-                }
-                catch
-                {
-                    if (Guid.TryParse(token, out var userId))
-                    {
-                        userIdClaim = token;
-                    }
-                }
-            }
-        }
-
-        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var finalUserId))
-        {
-            return Unauthorized(new { error = "Invalid user" });
+            return Unauthorized(new { error = "User not authenticated" });
         }
 
         var subscription = await _context.Subscriptions
-            .FirstOrDefaultAsync(s => s.Id == id && s.UserId == finalUserId);
+            .FirstOrDefaultAsync(s => s.Id == id && s.UserId == userId);
 
         if (subscription == null)
         {
@@ -294,13 +143,9 @@ public class SubscriptionsController : ControllerBase
         }
 
         subscription.IsActive = false;
-        subscription.UpdatedAt = DateTime.UtcNow;
-
         await _context.SaveChangesAsync();
 
-        _logger.LogInformation("Subscription deleted: {Name} for user {UserId}", subscription.Name, finalUserId);
-
-        return Ok(new { success = true, message = "Subscription removed" });
+        return Ok(new { success = true });
     }
     [HttpGet("test")]
     public IActionResult Test()

@@ -23,7 +23,7 @@ export class ApiService {
   }
 
   register(email: string, password: string, phoneNumber?: string) {
-    return this.http.post<any>(`${this.apiUrl}/auth/register`, { 
+    return this.http.post<any>(`${this.apiUrl}/Auth/register`, { 
       email, 
       password, 
       phoneNumber 
@@ -31,7 +31,7 @@ export class ApiService {
   }
 
   login(email: string, password: string) {
-    return this.http.post<any>(`${this.apiUrl}/auth/login`, { email, password });
+    return this.http.post<any>(`${this.apiUrl}/Auth/login`, { email, password });
   }
 
   getDashboard() {
@@ -42,13 +42,13 @@ export class ApiService {
   }
 
   addSubscription(data: any) {
-    return this.http.post<any>(`${this.apiUrl}/subscriptions`, data, {
+    return this.http.post<any>(`${this.apiUrl}/Subscriptions`, data, {
       headers: this.getHeaders()
     });
   }
 
   deleteSubscription(id: string) {
-    return this.http.delete<any>(`${this.apiUrl}/subscriptions/${id}`, {
+    return this.http.delete<any>(`${this.apiUrl}/Subscriptions/${id}`, {
       headers: this.getHeaders()
     });
   }
